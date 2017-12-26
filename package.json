@@ -4,7 +4,7 @@
   "description": "thread like a pro, wherever you go",
   "main": "index.js",
   "dependencies": {
-    "bindings": "^1.3.0",
+    "bindings": "^1.3.0"
   },
   "devDependencies": {},
   "scripts": {

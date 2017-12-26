@@ -53,8 +53,9 @@
         ],
       ],
       'sources': [
-        'src/threads.cc',
+        'src/Reference.cc',
         'src/Job.cc',
+        'src/threads.cc',
       ],
     },
   ],

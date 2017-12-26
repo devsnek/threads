@@ -2,6 +2,7 @@
 #include <v8.h>
 #include <uv.h>
 #include "Job.h"
+#include "Reference.h"
 #include "util.h"
 
 using namespace v8;
