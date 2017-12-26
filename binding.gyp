@@ -53,8 +53,8 @@
         ],
       ],
       'sources': [
-        'src/Reference.cc',
-        'src/Job.cc',
+#        'src/Reference.cc',
+        'src/Worker.cc',
         'src/threads.cc',
       ],
     },

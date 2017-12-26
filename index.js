@@ -1,11 +1,11 @@
-const { run } = require('bindings')('threads');
+const { Worker } = require('bindings')('threads');
 
-const kRunPromise = Symbol('kRunPromise');
+const kWorker = Symbol('kWorker');
 class Thread {
   constructor(fn, ...props) {
-    const promise = run(`(${fn})`, props);
-    Object.defineProperty(this, kRunPromise, {
-      value: promise,
+    const worker = new Worker(`(${fn})`, props);
+    Object.defineProperty(this, kWorker, {
+      value: worker,
       writable: false,
       enumerable: false,
       configurable: false,
@@ -13,11 +13,11 @@ class Thread {
   }
 
   join(handler) {
-    this[kRunPromise].then(handler);
+    this[kWorker].getPromise().then(handler);
   }
 
   catch(handler) {
-    this[kRunPromise].catch(handler);
+    this[kWorker].getPromise().catch(handler);
   }
 }
 
