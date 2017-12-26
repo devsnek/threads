@@ -1,4 +1,5 @@
 #include <node.h>
+#include <string.h>
 #include <v8.h>
 #include <uv.h>
 #include "Job.h"
