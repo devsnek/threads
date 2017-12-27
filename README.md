@@ -6,7 +6,6 @@ TODO:
 
 - [X] Console in thread
 - [X] Buffer in thread (freoss/buffer)
-- [ ] Fix up Thread#catch with the event loop
 - [ ] Allow passing "references" instead of copies
 
 
