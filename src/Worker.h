@@ -26,6 +26,7 @@ class Worker : public node::ObjectWrap {
   static void CheckOutgoingMessages(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Terminate(const v8::FunctionCallbackInfo<v8::Value>&);
   static void ThreadOn(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void ThreadConsole(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Lock(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Unlock(const v8::FunctionCallbackInfo<v8::Value>&);
 

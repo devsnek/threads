@@ -113,12 +113,18 @@ void Worker::WorkThread(uv_work_t* work) {
     Local<ObjectTemplate> tpl = ObjectTemplate::New(isolate);
     tpl->SetInternalFieldCount(1);
     Local<Context> context = Context::New(isolate, nullptr, tpl);
+
+    Context::Scope context_scope(context);
+    TryCatch try_catch(isolate);
+
     Local<Object> global = context->Global();
     global->SetAlignedPointerInInternalField(0, worker);
     USE(global->Set(context, String::NewFromUtf8(isolate, "global"), global));
 
-    Context::Scope context_scope(context);
-    TryCatch try_catch(isolate);
+    USE(global->Set(context, String::NewFromUtf8(isolate, "console_"), FunctionTemplate::New(isolate, ThreadConsole)->GetFunction()));
+
+    if (MaybeHandleException(isolate, &try_catch, worker))
+      return;
 
     ScriptOrigin origin(String::NewFromUtf8(isolate, "Thread"), // file name
                         Integer::New(isolate, 0),               // line offset
@@ -347,6 +353,21 @@ void Worker::ThreadOn(const FunctionCallbackInfo<Value>& info) {
 
   Local<Function> onmessage = info[1].As<Function>();
   context->Global()->SetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")), onmessage);
+
+  info.GetReturnValue().Set(Undefined(isolate));
+}
+
+void Worker::ThreadConsole(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  String::Utf8Value method(isolate, info[0]);
+  String::Utf8Value utf8(isolate, info[1]);
+
+  if(strcmp(*method, "error") == 0)
+    fprintf(stderr, "[Worker %s] %s\n", *method, *utf8);
+  else
+    printf("[Worker %s] %s\n", *method, *utf8);
 
   info.GetReturnValue().Set(Undefined(isolate));
 }
