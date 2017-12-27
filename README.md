@@ -14,6 +14,20 @@ t.join((result) => {
 });
 ```
 
+```javascript
+const adder = new Thread(({ on, send }) => {
+  on('message', (d) => {
+    send(d + 5);
+  });
+});
+
+adder.on('message', (result) => {
+  assert(result === 10);
+});
+
+adder.send(5);
+```
+
 TODO:
 - [ ] Fix up Thread#catch with the event loop
 - [ ] Maybe inject node buffers into them
