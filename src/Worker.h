@@ -20,13 +20,21 @@ class Worker : public node::ObjectWrap {
   static void New(const v8::FunctionCallbackInfo<v8::Value>&);
 
   static void GetPromise(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void IsRunning(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Send(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void CheckOutgoingMessages(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void Terminate(const v8::FunctionCallbackInfo<v8::Value>&);
+
+  static void ThreadOn(const v8::FunctionCallbackInfo<v8::Value>&);
   static void ThreadSend(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void ThreadTerminate(const v8::FunctionCallbackInfo<v8::Value>&);
 
   Worker::Source source;
   v8::Persistent<v8::Promise::Resolver> persistent;
   SerializedData result;
   SerializedData error;
+
+  bool running = false;
 
  private:
   static void WorkThread(uv_work_t*);

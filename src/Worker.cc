@@ -1,3 +1,4 @@
+#include <string.h>
 #include <node.h>
 #include <v8.h>
 #include <uv.h>
@@ -17,8 +18,10 @@ void Worker::Init(Local<Object> exports) {
   tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
   NODE_SET_PROTOTYPE_METHOD(tpl, "getPromise", GetPromise);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "isRunning", IsRunning);
   NODE_SET_PROTOTYPE_METHOD(tpl, "send", Send);
-  // NODE_SET_PROTOTYPE_METHOD(tpl, "terminate", Terminate);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "terminate", Terminate);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "checkOutgoingMessages", CheckOutgoingMessages);
 
   constructor.Reset(isolate, tpl->GetFunction());
   exports->Set(String::NewFromUtf8(isolate, "Worker"), tpl->GetFunction());
@@ -59,7 +62,6 @@ void Worker::New(const FunctionCallbackInfo<Value>& info) {
 
     Worker* worker = new Worker(local, source);
     worker->Wrap(info.This());
-    info.Holder()->SetAlignedPointerInInternalField(0, worker);
 
     info.GetReturnValue().Set(info.This());
   } else {
@@ -77,11 +79,15 @@ bool MaybeHandleException(Isolate* isolate, TryCatch* try_catch, Worker* worker)
     return false;
 
   worker->error = serialize(isolate, try_catch->Message()->Get());
+  worker->running = false;
+
   return true;
 }
 
 void Worker::WorkThread(uv_work_t* work) {
   Worker* worker = (Worker*) work->data;
+
+  worker->running = true;
 
   Worker::Source source = worker->source;
 
@@ -94,11 +100,13 @@ void Worker::WorkThread(uv_work_t* work) {
     Locker locker(isolate);
     HandleScope scope(isolate);
 
-    Local<Context> context = Context::New(isolate);
+    Local<ObjectTemplate> tpl = ObjectTemplate::New(isolate);
+    tpl->SetInternalFieldCount(1);
+    Local<Context> context = Context::New(isolate, nullptr, tpl);
+    context->Global()->SetAlignedPointerInInternalField(0, worker);
+
     Context::Scope context_scope(context);
     TryCatch try_catch(isolate);
-
-    // context->Global()->Set(context, String::NewFromUtf8(isolate, "send"), FunctionTemplate::New(isolate, WorkerSend)->GetFunction());
 
     ScriptOrigin origin(String::NewFromUtf8(isolate, "Thread"), // file name
                         Integer::New(isolate, 0),               // line offset
@@ -121,13 +129,19 @@ void Worker::WorkThread(uv_work_t* work) {
       return;
 
     Local<Array> props = deserialize(isolate, source.arguments).As<Array>();
-    Local<Value> args[props->Length()];
-    for (uint32_t i = 0; i < props->Length(); i++) {
+
+    Local<Value> args[props->Length() + 1];
+    for (uint32_t i = 0; i < props->Length(); i++)
       args[i] = props->Get(context, i).ToLocalChecked();
-    }
+
+    Local<Object> coms = Object::New(isolate);
+    USE(coms->Set(context, String::NewFromUtf8(isolate, "on"), FunctionTemplate::New(isolate, ThreadOn)->GetFunction()));
+    USE(coms->Set(context, String::NewFromUtf8(isolate, "send"), FunctionTemplate::New(isolate, ThreadSend)->GetFunction()));
+    USE(coms->Set(context, String::NewFromUtf8(isolate, "terminate"), FunctionTemplate::New(isolate, ThreadTerminate)->GetFunction()));
+    args[props->Length()] = coms;
 
     Local<Function> fn = maybe_result.ToLocalChecked().As<Function>();
-    maybe_result = fn->Call(context, context->Global(), props->Length(), args);
+    maybe_result = fn->Call(context, context->Global(), props->Length() + 1, args);
 
     if (MaybeHandleException(isolate, &try_catch, worker))
       return;
@@ -135,25 +149,30 @@ void Worker::WorkThread(uv_work_t* work) {
     if (maybe_result.IsEmpty())
       return;
 
-    Local<Value> onmessage = context->Global()->Get(context, String::NewFromUtf8(isolate, "onmessage")).ToLocalChecked();
+    MaybeLocal<Value> maybe_onmessage =
+      context->Global()->GetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")));
 
-    if (onmessage->IsFunction()) {
-      Local<Function> onmessage_fun = Local<Function>::Cast(onmessage);
+    if (!maybe_onmessage.IsEmpty()) {
+      Local<Function> onmessage = maybe_onmessage.ToLocalChecked().As<Function>();
       while (true) {
-        SerializedData* data = nullptr;
-        if (!worker->inQueue_.pop(*data))
-          continue;
-        if (!data)
+        if (!worker->running)
           break;
 
-        Local<Value> value = deserialize(isolate, *data);
+        if (worker->inQueue_.empty())
+          continue;
+
+        SerializedData data = worker->inQueue_.pop();   
+
+        Local<Value> value = deserialize(isolate, data);
         Local<Value> argv[1] = {value};
-        USE(onmessage_fun->Call(context, context->Global(), 1, argv));
+        USE(onmessage->Call(context, context->Global(), 1, argv));
       }
     }
 
     worker->result = serialize(isolate, maybe_result.ToLocalChecked());
   }
+
+  worker->running = false;
 
   isolate->Dispose();
 }
@@ -182,7 +201,7 @@ void Worker::WorkCallback(uv_work_t *work, int status) {
 }
 
 void Worker::GetPromise(const FunctionCallbackInfo<Value>& info) {
-  Isolate* isolate = Isolate::GetCurrent();
+  Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
   Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
@@ -192,23 +211,89 @@ void Worker::GetPromise(const FunctionCallbackInfo<Value>& info) {
   info.GetReturnValue().Set(local->GetPromise());
 }
 
-void Worker::Send(const FunctionCallbackInfo<Value>& info) {
-  Isolate* isolate = Isolate::GetCurrent();
+void Worker::IsRunning(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
   Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
-  SerializedData data = serialize(isolate, info[1]);
+
+  // is your worker running?
+  // yes? well you had better go catch it!
+  info.GetReturnValue().Set(Boolean::New(isolate, worker->running));
+}
+
+void Worker::Send(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
+  SerializedData data = serialize(isolate, info[0]);
   worker->inQueue_.push(data);
 
   info.GetReturnValue().Set(Undefined(isolate));
 }
 
-Worker* GetWorkerFromInternalField(Isolate* isolate, Local<Object> object) {
+// called once per tick using `process.nextTick`, a better method is definitely needed
+// for receiving messages
+void Worker::CheckOutgoingMessages(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
+
+  if (!worker)
+    return;
+
+  Local<Context> context = isolate->GetCurrentContext();
+ 
+  Local<Array> out = Array::New(isolate, 2);
+  info.GetReturnValue().Set(out);
+
+  if (worker->outQueue_.empty()) {
+    USE(out->Set(context, 0, False(isolate)));
+  } else {
+    SerializedData data = worker->outQueue_.pop();
+
+    Local<Value> value = deserialize(isolate, data);
+
+    USE(out->Set(context, 0, True(isolate)));
+    USE(out->Set(context, 1, value));
+  }
+}
+
+void Worker::Terminate(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
+  worker->running = false;
+
+  info.GetReturnValue().Set(Undefined(isolate));
+}
+
+void Worker::ThreadOn(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+  Local<Context> context = isolate->GetCurrentContext();
+
+  if(!info[0].As<String>()->Equals(String::NewFromUtf8(isolate, "message")))
+    return;
+
+  Local<Function> onmessage = info[1].As<Function>();
+  context->Global()->SetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")), onmessage);
+
+  info.GetReturnValue().Set(Undefined(isolate));
+}
+
+Worker* GetWorkerFromInternalField(Isolate* isolate) {
+  HandleScope scope(isolate);
+
+  Local<Object> object = isolate->GetCurrentContext()->Global();
+
   if (object->InternalFieldCount() != 1)
     return nullptr;
 
-  Worker* worker =
-      static_cast<Worker*>(object->GetAlignedPointerFromInternalField(0));
+  Worker* worker = static_cast<Worker*>(object->GetAlignedPointerFromInternalField(0));
   if (worker == nullptr)
     return nullptr;
 
@@ -217,11 +302,22 @@ Worker* GetWorkerFromInternalField(Isolate* isolate, Local<Object> object) {
 
 void Worker::ThreadSend(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
-  HandleScope handle_scope(isolate);
+  HandleScope scope(isolate);
 
-  Worker* worker = GetWorkerFromInternalField(isolate, info.Holder());
-  SerializedData data = serialize(isolate, info[1]);
+  Worker* worker = GetWorkerFromInternalField(isolate);
+  SerializedData data = serialize(isolate, info[0]);
   worker->outQueue_.push(data);
+
+  info.GetReturnValue().Set(Undefined(isolate));
+}
+
+
+void Worker::ThreadTerminate(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = GetWorkerFromInternalField(isolate);
+  worker->running = false;
 
   info.GetReturnValue().Set(Undefined(isolate));
 }

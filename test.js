@@ -2,15 +2,21 @@
 
 const Thread = require('.');
 
-const t = new Thread((x, y) => {
-  const start = Date.now();
-  const end = start + 1000;
-  while (Date.now() < end) {} // eslint-disable-line no-empty
+const t = new Thread((x, y, context) => {
+  context.send(1);
+  context.on('message', (d) => context.send(d));
   return { x, y };
 }, 5, 'meme');
 
-t.catch((e) => console.error('AA', e));
+t.catch((e) => console.error('CATCH', e));
 
-t.join((x) => console.log(process.uptime(), x));
+t.join((r) => console.log('JOIN', r));
 
-console.log('not very blocking');
+t.on('message', (d) => {
+  console.log('MESSAGE', d);
+  if (d === 3)
+    t.terminate();
+});
+
+t.send(2);
+t.send(3);

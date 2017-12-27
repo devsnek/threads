@@ -1,6 +1,9 @@
 #ifndef _WORKER_SRC_UTIL_H
 #define _WORKER_SRC_UTIL_H
 
+#include <queue>
+#include <thread>
+#include <mutex>
 #include <v8.h>
 
 typedef std::pair<uint8_t*, size_t> SerializedData;
@@ -24,59 +27,32 @@ inline v8::Local<v8::Value> deserialize(v8::Isolate* isolate, SerializedData dat
   return deserializer->ReadValue(context).ToLocalChecked();
 }
 
-#include <queue>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
- 
 template <typename T>
 class ThreadQueue {
  public:
+  void push(T item) {
+    std::lock_guard<std::mutex> mlock(this->mutex_);
+
+    this->queue_.push(item);
+  }
+
+  bool empty() {
+    std::lock_guard<std::mutex> mlock(this->mutex_);
+
+    return this->queue_.empty();
+  }
+
   T pop() {
-    std::unique_lock<std::mutex> mlock(this->mutex_);
-    /*
-    while (this->queue_.empty())
-      cond_.wait(mlock);
-    */
-    if (this->queue_.empty())
-      return nullptr;
+    std::lock_guard<std::mutex> mlock(this->mutex_);
 
     T item = this->queue_.front();
     this->queue_.pop();
     return item;
   }
  
-  bool pop(T& item) {
-    std::unique_lock<std::mutex> mlock(this->mutex_);
-    if (this->queue_.empty())
-      return false;
-    /*
-    while (this->queue_.empty())
-      this->cond_.wait(mlock);
-    */
-    item = this->queue_.front();
-    this->queue_.pop();
-    return true;
-  }
- 
-  void push(const T& item) {
-    std::unique_lock<std::mutex> mlock(this->mutex_);
-    this->queue_.push(item);
-    mlock.unlock();
-    this->cond_.notify_one();
-  }
- 
-  void push(T&& item) {
-    std::unique_lock<std::mutex> mlock(this->mutex_);
-    this->queue_.push(std::move(item));
-    mlock.unlock();
-    this->cond_.notify_one();
-  }
- 
  private:
   std::queue<T> queue_;
   std::mutex mutex_;
-  std::condition_variable cond_;
 };
 
 #endif // _WORKER_SRC_UTIL_H
