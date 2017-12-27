@@ -7,6 +7,8 @@
 
 using namespace v8;
 
+uv_thread_t main_thread;
+
 Persistent<Function> Worker::constructor;
 
 void Worker::Init(Local<Object> exports) {
@@ -22,6 +24,8 @@ void Worker::Init(Local<Object> exports) {
   NODE_SET_PROTOTYPE_METHOD(tpl, "send", Send);
   NODE_SET_PROTOTYPE_METHOD(tpl, "terminate", Terminate);
   NODE_SET_PROTOTYPE_METHOD(tpl, "checkOutgoingMessages", CheckOutgoingMessages);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "lock", Lock);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "unlock", Unlock);
 
   constructor.Reset(isolate, tpl->GetFunction());
   exports->Set(String::NewFromUtf8(isolate, "Worker"), tpl->GetFunction());
@@ -46,6 +50,8 @@ Worker::~Worker() {
 void Worker::New(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope handle(isolate);
+
+  main_thread = uv_thread_self();
 
   Local<Context> context = isolate->GetCurrentContext();
 
@@ -143,9 +149,15 @@ void Worker::WorkThread(uv_work_t* work) {
       args[i] = props->Get(context, i).ToLocalChecked();
 
     Local<Object> coms = Object::New(isolate);
-    USE(coms->Set(context, String::NewFromUtf8(isolate, "on"), FunctionTemplate::New(isolate, ThreadOn)->GetFunction()));
-    USE(coms->Set(context, String::NewFromUtf8(isolate, "send"), FunctionTemplate::New(isolate, ThreadSend)->GetFunction()));
-    USE(coms->Set(context, String::NewFromUtf8(isolate, "terminate"), FunctionTemplate::New(isolate, ThreadTerminate)->GetFunction()));
+#define V(name, fn) \
+    USE(coms->Set(context, String::NewFromUtf8(isolate, name), FunctionTemplate::New(isolate, fn)->GetFunction()))
+
+    V("on", ThreadOn);
+    V("send", Send);
+    V("terminate", Terminate);
+    V("lock", Lock);
+    V("unlock", Unlock);
+#undef V
     args[props->Length()] = coms;
 
     Local<Function> fn = maybe_result.ToLocalChecked().As<Function>();
@@ -211,22 +223,40 @@ void Worker::WorkCallback(uv_work_t *work, int status) {
   }
 }
 
+bool inThread() {
+  uv_thread_t this_thread = uv_thread_self();
+  return !uv_thread_equal(&main_thread, &this_thread);
+}
+
+Worker* Worker::GetWorker(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  if (!inThread())
+    return ObjectWrap::Unwrap<Worker>(info.Holder());
+
+  Local<Object> global = isolate->GetCurrentContext()->Global();
+  return static_cast<Worker*>(global->GetAlignedPointerFromInternalField(0));
+}
+
+
 void Worker::GetPromise(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
-  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
+  Worker* worker = GetWorker(info);
 
   Local<Promise::Resolver> local = Local<Promise::Resolver>::New(isolate, worker->persistent);
 
   info.GetReturnValue().Set(local->GetPromise());
 }
 
+
 void Worker::IsRunning(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
-  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
+  Worker* worker = GetWorker(info);
 
   // is your worker running?
   // yes? well you had better go catch it!
@@ -237,9 +267,13 @@ void Worker::Send(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
-  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
   SerializedData data = serialize(isolate, info[0]);
-  worker->inQueue_.push(data);
+
+  Worker* worker = GetWorker(info);
+  if (inThread())
+    worker->outQueue_.push(data);
+  else
+    worker->inQueue_.push(data);
 
   info.GetReturnValue().Set(Undefined(isolate));
 }
@@ -276,10 +310,31 @@ void Worker::Terminate(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
-  Worker* worker = ObjectWrap::Unwrap<Worker>(info.Holder());
+  Worker* worker = GetWorker(info);
+
   worker->running = false;
 
   info.GetReturnValue().Set(Undefined(isolate));
+}
+
+void Worker::Lock(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = GetWorker(info);
+
+  info.GetReturnValue().Set(Boolean::New(isolate, worker->js_mutex_.try_lock()));
+}
+
+void Worker::Unlock(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = GetWorker(info);
+
+  worker->js_mutex_.unlock();
+
+  info.GetReturnValue().Set(True(isolate));
 }
 
 void Worker::ThreadOn(const FunctionCallbackInfo<Value>& info) {
@@ -292,43 +347,6 @@ void Worker::ThreadOn(const FunctionCallbackInfo<Value>& info) {
 
   Local<Function> onmessage = info[1].As<Function>();
   context->Global()->SetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")), onmessage);
-
-  info.GetReturnValue().Set(Undefined(isolate));
-}
-
-Worker* GetWorkerFromInternalField(Isolate* isolate) {
-  HandleScope scope(isolate);
-
-  Local<Object> object = isolate->GetCurrentContext()->Global();
-
-  if (object->InternalFieldCount() != 1)
-    return nullptr;
-
-  Worker* worker = static_cast<Worker*>(object->GetAlignedPointerFromInternalField(0));
-  if (worker == nullptr)
-    return nullptr;
-
-  return worker;
-}
-
-void Worker::ThreadSend(const FunctionCallbackInfo<Value>& info) {
-  Isolate* isolate = info.GetIsolate();
-  HandleScope scope(isolate);
-
-  Worker* worker = GetWorkerFromInternalField(isolate);
-  SerializedData data = serialize(isolate, info[0]);
-  worker->outQueue_.push(data);
-
-  info.GetReturnValue().Set(Undefined(isolate));
-}
-
-
-void Worker::ThreadTerminate(const FunctionCallbackInfo<Value>& info) {
-  Isolate* isolate = info.GetIsolate();
-  HandleScope scope(isolate);
-
-  Worker* worker = GetWorkerFromInternalField(isolate);
-  worker->running = false;
 
   info.GetReturnValue().Set(Undefined(isolate));
 }
