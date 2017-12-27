@@ -1,3 +1,5 @@
+// https://github.com/Microsoft/napajs/blob/master/examples/tutorial/estimate-pi-in-parallel/estimate-pi-in-parallel.js
+
 const Thread = require('..');
 
 function estimatePI(points) {

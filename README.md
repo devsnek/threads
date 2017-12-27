@@ -2,6 +2,17 @@
 
 These are real threads that don't crash **and** run your js without exploding.
 
+```javascript
+const Thread = require('threads');
+const assert = require('assert');
+
+const t = new Thread((a, b) => a + b, 1, 2);
+
+t.join().then((r) => {
+  assert(r === 3);
+});
+```
+
 TODO:
 
 - [X] Console in thread
