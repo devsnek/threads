@@ -119,6 +119,8 @@ void Worker::WorkThread(uv_work_t* work) {
 
     Context::Scope context_scope(context);
     TryCatch try_catch(isolate);
+#define CHECK_ERR()\
+    if (MaybeHandleException(isolate, &try_catch, worker)) return
 
     Local<Object> global = context->Global();
     global->SetAlignedPointerInInternalField(0, worker);
@@ -126,8 +128,7 @@ void Worker::WorkThread(uv_work_t* work) {
 
     USE(global->Set(context, String::NewFromUtf8(isolate, "console_"), FunctionTemplate::New(isolate, ThreadConsole)->GetFunction()));
 
-    if (MaybeHandleException(isolate, &try_catch, worker))
-      return;
+    CHECK_ERR();
 
     ScriptOrigin origin(String::NewFromUtf8(isolate, "Thread"), // file name
                         Integer::New(isolate, 0),               // line offset
@@ -142,11 +143,16 @@ void Worker::WorkThread(uv_work_t* work) {
     USE(Script::Compile(context, String::NewFromUtf8(isolate, source.preload)).ToLocalChecked()->Run(context));
 
     Local<String> code = String::NewFromUtf8(isolate, source.code);
-    Local<Script> script = Script::Compile(context, code, &origin).ToLocalChecked();
-    MaybeLocal<Value> maybe_result = script->Run(context);
+    MaybeLocal<Script> maybe_script = Script::Compile(context, code, &origin);
 
-    if (MaybeHandleException(isolate, &try_catch, worker))
+    CHECK_ERR();
+
+    if (maybe_script.IsEmpty())
       return;
+
+    MaybeLocal<Value> maybe_result = maybe_script.ToLocalChecked()->Run(context);
+
+    CHECK_ERR();
 
     if (maybe_result.IsEmpty())
       return;
@@ -172,8 +178,7 @@ void Worker::WorkThread(uv_work_t* work) {
     Local<Function> fn = maybe_result.ToLocalChecked().As<Function>();
     maybe_result = fn->Call(context, global, props->Length() + 1, args);
 
-    if (MaybeHandleException(isolate, &try_catch, worker))
-      return;
+    CHECK_ERR();
 
     if (maybe_result.IsEmpty())
       return;
@@ -200,6 +205,8 @@ void Worker::WorkThread(uv_work_t* work) {
         }
       }
     }
+
+#undef CHECK_ERR
 
     worker->result = serialize(isolate, maybe_result.ToLocalChecked());
   }

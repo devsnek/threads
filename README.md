@@ -2,33 +2,95 @@
 
 These are real threads that don't crash **and** run your js without exploding.
 
-```javascript
-const Thread = require('threads');
-
-const t = new Thread((foo, bar) => {
-  return foo + bar;
-}, 1, 2);
-
-t.join((result) => {
-  assert(result === 3);
-});
-```
-
-```javascript
-const adder = new Thread(({ on, send }) => {
-  on('message', (d) => {
-    send(d + 5);
-  });
-});
-
-adder.on('message', (result) => {
-  assert(result === 10);
-});
-
-adder.send(5);
-```
-
 TODO:
+
+- [X] Console in thread
+- [X] Buffer in thread (freoss/buffer)
 - [ ] Fix up Thread#catch with the event loop
-- [x] Maybe inject node buffers into them (uses freoss/buffer)
 - [ ] Allow passing "references" instead of copies
+
+
+---
+
+
+# Docs
+
+<a name="Thread"></a>
+
+## Thread
+A Thread
+
+**Kind**: global class
+
+* [Thread](#Thread)
+    * _instance_
+        * [.send(value)](#Thread+send)
+        * [.join(handler)](#Thread+join)
+        * [.catch(handler)](#Thread+catch)
+        * [.terminate()](#Thread+terminate)
+        * [.lock()](#Thread+lock) ⇒ <code>boolean</code>
+        * [.unlock()](#Thread+unlock)
+    * _inner_
+        * [~fnCallback](#Thread..fnCallback) : <code>function</code>
+
+<a name="Thread+send"></a>
+
+### thread.send(value)
+Send a value to the thread
+
+**Kind**: instance method of [<code>Thread</code>](#Thread)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| value | <code>\*</code> | Value to send |
+
+<a name="Thread+join"></a>
+
+### thread.join(handler)
+Wait for the thread to finish and call `handler` with its return value.
+
+**Kind**: instance method of [<code>Thread</code>](#Thread)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| handler | <code>function</code> | Callback |
+
+<a name="Thread+catch"></a>
+
+### thread.catch(handler)
+Handle any errors that happen during execution of the thread's code
+
+**Kind**: instance method of [<code>Thread</code>](#Thread)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| handler | <code>function</code> | Callback |
+
+<a name="Thread+terminate"></a>
+
+### thread.terminate()
+Terminate the thread
+
+**Kind**: instance method of [<code>Thread</code>](#Thread)
+<a name="Thread+lock"></a>
+
+### thread.lock() ⇒ <code>boolean</code>
+Lock the thread's context's mutex, analogous to std::mutex::try_lock
+
+**Kind**: instance method of [<code>Thread</code>](#Thread)
+**Returns**: <code>boolean</code> - If the lock was successfully obtained
+<a name="Thread+unlock"></a>
+
+### thread.unlock()
+Unlock the thread context's mutex, analogous to std::mutex::unlock
+
+**Kind**: instance method of [<code>Thread</code>](#Thread)
+<a name="Thread..fnCallback"></a>
+
+### Thread~fnCallback : <code>function</code>
+**Kind**: inner typedef of [<code>Thread</code>](#Thread)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...args | <code>args</code> | Arguments from the [Thread](#Thread) constructor |
+| context | <code>Thread~Context</code> |  |
