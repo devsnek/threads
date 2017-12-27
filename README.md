@@ -18,11 +18,10 @@ TODO:
 <a name="Thread"></a>
 
 ## Thread
-A Thread
-
 **Kind**: global class
 
 * [Thread](#Thread)
+    * [new Thread(fn, ...props)](#new_Thread_new)
     * _instance_
         * [.send(value)](#Thread+send)
         * [.join(handler)](#Thread+join)
@@ -31,7 +30,19 @@ A Thread
         * [.lock()](#Thread+lock) ⇒ <code>boolean</code>
         * [.unlock()](#Thread+unlock)
     * _inner_
+        * [~Context](#Thread..Context) : <code>Object</code>
         * [~fnCallback](#Thread..fnCallback) : <code>function</code>
+
+<a name="new_Thread_new"></a>
+
+### new Thread(fn, ...props)
+Create a thread
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| fn | [<code>fnCallback</code>](#Thread..fnCallback) | Function that will run in a new thread |
+| ...props | <code>\*</code> | Values to pass to the thread callback |
 
 <a name="Thread+send"></a>
 
@@ -85,6 +96,20 @@ Lock the thread's context's mutex, analogous to std::mutex::try_lock
 Unlock the thread context's mutex, analogous to std::mutex::unlock
 
 **Kind**: instance method of [<code>Thread</code>](#Thread)
+<a name="Thread..Context"></a>
+
+### Thread~Context : <code>Object</code>
+**Kind**: inner typedef of [<code>Thread</code>](#Thread)
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| on | <code>function</code> |
+| send | <code>function</code> |
+| terminate | <code>function</code> |
+| lock | <code>function</code> |
+| unlock | <code>function</code> |
+
 <a name="Thread..fnCallback"></a>
 
 ### Thread~fnCallback : <code>function</code>
@@ -93,4 +118,4 @@ Unlock the thread context's mutex, analogous to std::mutex::unlock
 | Param | Type | Description |
 | --- | --- | --- |
 | ...args | <code>args</code> | Arguments from the [Thread](#Thread) constructor |
-| context | <code>Thread~Context</code> |  |
+| context | [<code>Context</code>](#Thread..Context) |  |
