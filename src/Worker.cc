@@ -54,9 +54,13 @@ void Worker::New(const FunctionCallbackInfo<Value>& info) {
 
     Worker::Source source;
 
-    String::Utf8Value utf8(isolate, info[0].As<String>());
-    char* buffer = strdup(*utf8);
+    String::Utf8Value code_utf8(isolate, info[0].As<String>());
+    char* buffer = strdup(*code_utf8);
     source.code = buffer;
+
+    String::Utf8Value preload_utf8(isolate, info[2].As<String>());
+    buffer = strdup(*preload_utf8);
+    source.preload = buffer;
 
     source.arguments = serialize(isolate, info[1].As<Array>());
 
@@ -103,7 +107,9 @@ void Worker::WorkThread(uv_work_t* work) {
     Local<ObjectTemplate> tpl = ObjectTemplate::New(isolate);
     tpl->SetInternalFieldCount(1);
     Local<Context> context = Context::New(isolate, nullptr, tpl);
-    context->Global()->SetAlignedPointerInInternalField(0, worker);
+    Local<Object> global = context->Global();
+    global->SetAlignedPointerInInternalField(0, worker);
+    USE(global->Set(context, String::NewFromUtf8(isolate, "global"), global));
 
     Context::Scope context_scope(context);
     TryCatch try_catch(isolate);
@@ -117,6 +123,8 @@ void Worker::WorkThread(uv_work_t* work) {
                         False(isolate),                         // is opaque (?)
                         False(isolate),                         // is WASM
                         False(isolate));                        // is ES6 module
+
+    USE(Script::Compile(context, String::NewFromUtf8(isolate, source.preload)).ToLocalChecked()->Run(context));
 
     Local<String> code = String::NewFromUtf8(isolate, source.code);
     Local<Script> script = Script::Compile(context, code, &origin).ToLocalChecked();
@@ -141,7 +149,7 @@ void Worker::WorkThread(uv_work_t* work) {
     args[props->Length()] = coms;
 
     Local<Function> fn = maybe_result.ToLocalChecked().As<Function>();
-    maybe_result = fn->Call(context, context->Global(), props->Length() + 1, args);
+    maybe_result = fn->Call(context, global, props->Length() + 1, args);
 
     if (MaybeHandleException(isolate, &try_catch, worker))
       return;
@@ -150,22 +158,25 @@ void Worker::WorkThread(uv_work_t* work) {
       return;
 
     MaybeLocal<Value> maybe_onmessage =
-      context->Global()->GetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")));
+      global->GetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")));
 
     if (!maybe_onmessage.IsEmpty()) {
-      Local<Function> onmessage = maybe_onmessage.ToLocalChecked().As<Function>();
-      while (true) {
-        if (!worker->running)
-          break;
+      Local<Value> onmessage_ = maybe_onmessage.ToLocalChecked();
+      if (onmessage_->IsFunction()) {
+        Local<Function> onmessage = onmessage_.As<Function>();
+        while (true) {
+          if (!worker->running)
+            break;
 
-        if (worker->inQueue_.empty())
-          continue;
+          if (worker->inQueue_.empty())
+            continue;
 
-        SerializedData data = worker->inQueue_.pop();   
+          SerializedData data = worker->inQueue_.pop();
 
-        Local<Value> value = deserialize(isolate, data);
-        Local<Value> argv[1] = {value};
-        USE(onmessage->Call(context, context->Global(), 1, argv));
+          Local<Value> value = deserialize(isolate, data);
+          Local<Value> argv[1] = {value};
+          USE(onmessage->Call(context, global, 1, argv));
+        }
       }
     }
 

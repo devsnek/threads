@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 
-const Thread = require('.');
+const Thread = require('..');
 
 const t = new Thread((x, y, context) => {
   context.send(1);

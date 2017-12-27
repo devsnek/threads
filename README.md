@@ -30,5 +30,5 @@ adder.send(5);
 
 TODO:
 - [ ] Fix up Thread#catch with the event loop
-- [ ] Maybe inject node buffers into them
+- [x] Maybe inject node buffers into them (uses freoss/buffer)
 - [ ] Allow passing "references" instead of copies

@@ -10,6 +10,7 @@
 class Worker : public node::ObjectWrap {
   struct Source {
     const char* code;
+    const char* preload;
     std::pair<uint8_t*, size_t> arguments;
   };
 
