@@ -38,6 +38,7 @@ class Worker : public node::ObjectWrap {
   SerializedData error;
 
   bool running = false;
+  int id;
 
  private:
   static void WorkThread(uv_work_t*);

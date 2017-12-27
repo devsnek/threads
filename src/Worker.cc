@@ -31,11 +31,14 @@ void Worker::Init(Local<Object> exports) {
   exports->Set(String::NewFromUtf8(isolate, "Worker"), tpl->GetFunction());
 }
 
+int WorkerId = 0;
+
 Worker::Worker(Local<Promise::Resolver> resolver, Worker::Source source) {
   Isolate* isolate = Isolate::GetCurrent();
 
   this->source = source;
   this->persistent.Reset(isolate, resolver);
+  this->id = WorkerId++;
 
   uv_work_t *work = new uv_work_t;
   work->data = this;
@@ -364,10 +367,11 @@ void Worker::ThreadConsole(const FunctionCallbackInfo<Value>& info) {
   String::Utf8Value method(isolate, info[0]);
   String::Utf8Value utf8(isolate, info[1]);
 
-  if(strcmp(*method, "error") == 0)
-    fprintf(stderr, "[Worker %s] %s\n", *method, *utf8);
-  else
-    printf("[Worker %s] %s\n", *method, *utf8);
+  Worker* worker = GetWorker(info);
+
+  const char* fmt = "[Worker %02d] %s\n";
+  FILE* out = strcmp(*method, "error") == 0 ? stderr : stdout;
+  fprintf(out, fmt, worker->id, *utf8);
 
   info.GetReturnValue().Set(Undefined(isolate));
 }
