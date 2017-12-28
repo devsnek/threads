@@ -1,4 +1,9 @@
-# threads
+[![npm][download-badge]][npm]
+[![David][dep-badge]][dep-link]
+
+[![NPM][large-badge]][stats-link]
+
+# threads <sup>[![Version Badge][version-badge]][npm]</sup>
 
 These are real threads that don't crash **and** run your js without exploding.
 
@@ -34,8 +39,7 @@ TODO:
     * [new Thread(fn, ...props)](#new_Thread_new)
     * _instance_
         * [.send(value)](#Thread+send)
-        * [.join(handler)](#Thread+join)
-        * [.catch(handler)](#Thread+catch)
+        * [.join()](#Thread+join) ⇒ <code>Promise.&lt;\*&gt;</code>
         * [.terminate()](#Thread+terminate)
         * [.lock()](#Thread+lock) ⇒ <code>boolean</code>
         * [.unlock()](#Thread+unlock)
@@ -67,26 +71,11 @@ Send a value to the thread
 
 <a name="Thread+join"></a>
 
-### thread.join(handler)
-Wait for the thread to finish and call `handler` with its return value.
+### thread.join() ⇒ <code>Promise.&lt;\*&gt;</code>
+Return a promise that resolves when the thread finishes with the return value
+or rejects when there is an execution error in the thread.
 
 **Kind**: instance method of [<code>Thread</code>](#Thread)
-
-| Param | Type | Description |
-| --- | --- | --- |
-| handler | <code>function</code> | Callback |
-
-<a name="Thread+catch"></a>
-
-### thread.catch(handler)
-Handle any errors that happen during execution of the thread's code
-
-**Kind**: instance method of [<code>Thread</code>](#Thread)
-
-| Param | Type | Description |
-| --- | --- | --- |
-| handler | <code>function</code> | Callback |
-
 <a name="Thread+terminate"></a>
 
 ### thread.terminate()
@@ -98,18 +87,18 @@ Terminate the thread
 ### thread.lock() ⇒ <code>boolean</code>
 Lock the thread's context's mutex, analogous to std::mutex::try_lock
 
-**Kind**: instance method of [<code>Thread</code>](#Thread)
+**Kind**: instance method of [<code>Thread</code>](#Thread)  
 **Returns**: <code>boolean</code> - If the lock was successfully obtained
 <a name="Thread+unlock"></a>
 
 ### thread.unlock()
 Unlock the thread context's mutex, analogous to std::mutex::unlock
 
-**Kind**: instance method of [<code>Thread</code>](#Thread)
+**Kind**: instance method of [<code>Thread</code>](#Thread)  
 <a name="Thread..Context"></a>
 
 ### Thread~Context : <code>Object</code>
-**Kind**: inner typedef of [<code>Thread</code>](#Thread)
+**Kind**: inner typedef of [<code>Thread</code>](#Thread)  
 **Properties**
 
 | Name | Type |
@@ -129,3 +118,11 @@ Unlock the thread context's mutex, analogous to std::mutex::unlock
 | --- | --- | --- |
 | ...args | <code>args</code> | Arguments from the [Thread](#Thread) constructor |
 | context | [<code>Context</code>](#Thread..Context) |  |
+
+[npm]: https://npmjs.org/package/@snek/threads
+[large-badge]: https://nodei.co/npm/@snek/threads.png?downloads=true&downloadRank=true&stars=true
+[stats-link]: https://nodei.co/npm/@snek/threads/
+[version-badge]: http://versionbadg.es/devsnek/threads.svg
+[download-badge]: https://img.shields.io/npm/dt/@snek/threads.svg?maxAge=3600
+[dep-badge]: https://david-dm.org/devsnek/threads.svg
+[dep-link]: https://david-dm.org/devsnek/threads

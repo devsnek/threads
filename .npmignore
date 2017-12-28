@@ -1,2 +1,5 @@
 webpack.config.js
 lib/preload.js
+lib/util-format.js
+build
+README.md
