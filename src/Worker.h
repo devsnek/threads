@@ -28,10 +28,12 @@ class Worker : public node::ObjectWrap {
   static void Send(const v8::FunctionCallbackInfo<v8::Value>&);
   static void CheckOutgoingMessages(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Terminate(const v8::FunctionCallbackInfo<v8::Value>&);
-  static void ThreadOn(const v8::FunctionCallbackInfo<v8::Value>&);
-  static void ThreadConsole(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Lock(const v8::FunctionCallbackInfo<v8::Value>&);
   static void Unlock(const v8::FunctionCallbackInfo<v8::Value>&);
+
+  static void ThreadOn(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void ThreadConsole(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void ThreadPerformanceNow(const v8::FunctionCallbackInfo<v8::Value>&);
 
   static Worker* GetWorker(const v8::FunctionCallbackInfo<v8::Value>&);
 
