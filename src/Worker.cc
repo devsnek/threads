@@ -11,9 +11,8 @@ uv_thread_t main_thread;
 
 Persistent<Function> Worker::constructor;
 
-#define PERFORMANCE_NOW() uv_hrtime()
 
-const uint64_t timeOrigin = PERFORMANCE_NOW();
+const uint64_t timeOrigin = uv_hrtime();
 
 void Worker::Init(Local<Object> exports) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -136,7 +135,7 @@ void Worker::WorkThread(uv_work_t* work) {
     Local<Object> perf = Object::New(isolate);
 #define V(name, val)\
     USE(perf->Set(context, String::NewFromUtf8(isolate, name), val))
-    V("now",FunctionTemplate::New(isolate, ThreadPerformanceNow)->GetFunction());
+    V("_hrtime",FunctionTemplate::New(isolate, ThreadHrtime)->GetFunction());
     V("timeOrigin", Number::New(isolate, timeOrigin / 1e6));
 #undef V
     USE(global->Set(context, String::NewFromUtf8(isolate, "performance"), perf));
@@ -402,11 +401,17 @@ void Worker::ThreadConsole(const FunctionCallbackInfo<Value>& info) {
   info.GetReturnValue().Set(Undefined(isolate));
 }
 
-void Worker::ThreadPerformanceNow(const FunctionCallbackInfo<Value>& info) {
+void Worker::ThreadHrtime(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
-  info.GetReturnValue().Set(Number::New(isolate, (PERFORMANCE_NOW() - timeOrigin) / 1e6));
-}
+  uint64_t t = uv_hrtime() - timeOrigin;
 
-#undef PERFORMANCE_NOW
+  Local<ArrayBuffer> ab = info[0].As<Uint32Array>()->Buffer();
+  uint32_t* fields = static_cast<uint32_t*>(ab->GetContents().Data());
+
+  uint32_t NANOS_PER_SEC = 1000000000;
+  fields[0] = (t / NANOS_PER_SEC) >> 32;
+  fields[1] = (t / NANOS_PER_SEC) & 0xffffffff;
+  fields[2] = t % NANOS_PER_SEC;
+}

@@ -33,7 +33,7 @@ class Worker : public node::ObjectWrap {
 
   static void ThreadOn(const v8::FunctionCallbackInfo<v8::Value>&);
   static void ThreadConsole(const v8::FunctionCallbackInfo<v8::Value>&);
-  static void ThreadPerformanceNow(const v8::FunctionCallbackInfo<v8::Value>&);
+  static void ThreadHrtime(const v8::FunctionCallbackInfo<v8::Value>&);
 
   static Worker* GetWorker(const v8::FunctionCallbackInfo<v8::Value>&);
 
