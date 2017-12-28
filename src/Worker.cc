@@ -20,7 +20,8 @@ void Worker::Init(Local<Object> exports) {
   tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
   NODE_SET_PROTOTYPE_METHOD(tpl, "getPromise", GetPromise);
-  NODE_SET_PROTOTYPE_METHOD(tpl, "isRunning", IsRunning);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "getId", GetId);
+  NODE_SET_PROTOTYPE_METHOD(tpl, "getState", GetState);
   NODE_SET_PROTOTYPE_METHOD(tpl, "send", Send);
   NODE_SET_PROTOTYPE_METHOD(tpl, "terminate", Terminate);
   NODE_SET_PROTOTYPE_METHOD(tpl, "checkOutgoingMessages", CheckOutgoingMessages);
@@ -31,7 +32,7 @@ void Worker::Init(Local<Object> exports) {
   exports->Set(String::NewFromUtf8(isolate, "Worker"), tpl->GetFunction());
 }
 
-int WorkerId = 0;
+uint32_t WorkerId = 0;
 
 Worker::Worker(Local<Promise::Resolver> resolver, Worker::Source source) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -92,7 +93,7 @@ bool MaybeHandleException(Isolate* isolate, TryCatch* try_catch, Worker* worker)
     return false;
 
   worker->error = serialize(isolate, try_catch->Message()->Get());
-  worker->running = false;
+  worker->state = Worker::State::terminated;
 
   return true;
 }
@@ -100,7 +101,7 @@ bool MaybeHandleException(Isolate* isolate, TryCatch* try_catch, Worker* worker)
 void Worker::WorkThread(uv_work_t* work) {
   Worker* worker = (Worker*) work->data;
 
-  worker->running = true;
+  worker->state = Worker::State::running;
 
   Worker::Source source = worker->source;
 
@@ -173,6 +174,7 @@ void Worker::WorkThread(uv_work_t* work) {
     V("lock", Lock);
     V("unlock", Unlock);
 #undef V
+    USE(coms->Set(context, String::NewFromUtf8(isolate, "id"), Integer::New(isolate, worker->id)));
     args[props->Length()] = coms;
 
     Local<Function> fn = maybe_result.ToLocalChecked().As<Function>();
@@ -191,7 +193,7 @@ void Worker::WorkThread(uv_work_t* work) {
       if (onmessage_->IsFunction()) {
         Local<Function> onmessage = onmessage_.As<Function>();
         while (true) {
-          if (!worker->running)
+          if (worker->state != Worker::State::running)
             break;
 
           if (worker->inQueue_.empty())
@@ -211,7 +213,7 @@ void Worker::WorkThread(uv_work_t* work) {
     worker->result = serialize(isolate, maybe_result.ToLocalChecked());
   }
 
-  worker->running = false;
+  worker->state = Worker::State::running;
 
   isolate->Dispose();
 }
@@ -255,7 +257,6 @@ Worker* Worker::GetWorker(const FunctionCallbackInfo<Value>& info) {
   return static_cast<Worker*>(global->GetAlignedPointerFromInternalField(0));
 }
 
-
 void Worker::GetPromise(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
@@ -267,16 +268,22 @@ void Worker::GetPromise(const FunctionCallbackInfo<Value>& info) {
   info.GetReturnValue().Set(local->GetPromise());
 }
 
-
-void Worker::IsRunning(const FunctionCallbackInfo<Value>& info) {
+void Worker::GetId(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
   Worker* worker = GetWorker(info);
 
-  // is your worker running?
-  // yes? well you had better go catch it!
-  info.GetReturnValue().Set(Boolean::New(isolate, worker->running));
+  info.GetReturnValue().Set(Integer::New(isolate, worker->id));
+}
+
+void Worker::GetState(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  HandleScope scope(isolate);
+
+  Worker* worker = GetWorker(info);
+
+  info.GetReturnValue().Set(Integer::New(isolate, worker->state));
 }
 
 void Worker::Send(const FunctionCallbackInfo<Value>& info) {
@@ -328,7 +335,7 @@ void Worker::Terminate(const FunctionCallbackInfo<Value>& info) {
 
   Worker* worker = GetWorker(info);
 
-  worker->running = false;
+  worker->state = Worker::State::terminated;
 
   info.GetReturnValue().Set(Undefined(isolate));
 }

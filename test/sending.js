@@ -2,15 +2,15 @@
 
 const Thread = require('..');
 
-const t = new Thread((x, y, context) => {
-  context.send(1);
-  context.on('message', (d) => context.send(d));
-  return { x, y };
+const t = new Thread((x, y, { on, send, id }) => {
+  send(1);
+  on('message', (d) => send(d));
+  return { x, y, id };
 }, 5, 'meme');
 
-t.catch((e) => console.error('CATCH', e));
-
-t.join((r) => console.log('JOIN', r));
+t.join()
+  .then((r) => console.log('JOIN', r))
+  .catch((e) => console.error('CATCH', e));
 
 t.on('message', (d) => {
   console.log('MESSAGE', d);
