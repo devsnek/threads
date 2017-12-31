@@ -8,11 +8,9 @@
 using namespace v8;
 
 uv_thread_t main_thread;
+const uint64_t timeOrigin = uv_hrtime();
 
 Persistent<Function> Worker::constructor;
-
-
-const uint64_t timeOrigin = uv_hrtime();
 
 void Worker::Init(Local<Object> exports) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -31,8 +29,20 @@ void Worker::Init(Local<Object> exports) {
   NODE_SET_PROTOTYPE_METHOD(tpl, "lock", Lock);
   NODE_SET_PROTOTYPE_METHOD(tpl, "unlock", Unlock);
 
-  constructor.Reset(isolate, tpl->GetFunction());
-  exports->Set(String::NewFromUtf8(isolate, "Worker"), tpl->GetFunction());
+  Local<Object> constants = Object::New(isolate);
+#define V(name, val) \
+  constants->Set(String::NewFromUtf8(isolate, name), Integer::New(isolate, val));
+  V("created", Worker::State::created);
+  V("running", Worker::State::running);
+  V("terminated", Worker::State::terminated);
+#undef V
+
+  Local<Function> fn = tpl->GetFunction();
+  fn->Set(String::NewFromUtf8(isolate, "constants"), constants);
+  constructor.Reset(isolate, fn);
+  exports->Set(String::NewFromUtf8(isolate, "Worker"), fn);
+
+  exports->Set(String::NewFromUtf8(isolate, "constants"), constants);
 }
 
 uint32_t WorkerId = 0;
@@ -56,7 +66,7 @@ Worker::~Worker() {
 
 void Worker::New(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
-  HandleScope handle(isolate);
+  HandleScope scope(isolate);
 
   main_thread = uv_thread_self();
 
@@ -89,18 +99,6 @@ void Worker::New(const FunctionCallbackInfo<Value>& info) {
   }
 }
 
-bool MaybeHandleException(Isolate* isolate, TryCatch* try_catch, Worker* worker) {
-  HandleScope scope(isolate);
-
-  if (!try_catch->HasCaught())
-    return false;
-
-  worker->error = serialize(isolate, try_catch->Message()->Get());
-  worker->state = Worker::State::terminated;
-
-  return true;
-}
-
 void Worker::WorkThread(uv_work_t* work) {
   Worker* worker = (Worker*) work->data;
 
@@ -123,8 +121,12 @@ void Worker::WorkThread(uv_work_t* work) {
 
     Context::Scope context_scope(context);
     TryCatch try_catch(isolate);
-#define CHECK_ERR()\
-    if (MaybeHandleException(isolate, &try_catch, worker)) return
+#define CHECK_ERR() \
+    if (try_catch.HasCaught()) {                                        \
+      worker->error = serialize(isolate, try_catch.Message()->Get());   \
+      worker->state = Worker::State::terminated;                        \
+      return;                                                           \
+    }
 
     Local<Object> global = context->Global();
     global->SetAlignedPointerInInternalField(0, worker);
@@ -133,7 +135,7 @@ void Worker::WorkThread(uv_work_t* work) {
     USE(global->Set(context, String::NewFromUtf8(isolate, "console_"), FunctionTemplate::New(isolate, ThreadConsole)->GetFunction()));
 
     Local<Object> perf = Object::New(isolate);
-#define V(name, val)\
+#define V(name, val) \
     USE(perf->Set(context, String::NewFromUtf8(isolate, name), val))
     V("_hrtime",FunctionTemplate::New(isolate, ThreadHrtime)->GetFunction());
     V("timeOrigin", Number::New(isolate, timeOrigin / 1e6));
@@ -224,14 +226,14 @@ void Worker::WorkThread(uv_work_t* work) {
     worker->result = serialize(isolate, maybe_result.ToLocalChecked());
   }
 
-  worker->state = Worker::State::running;
+  worker->state = Worker::State::terminated;
 
   isolate->Dispose();
 }
 
 void Worker::WorkCallback(uv_work_t *work, int status) {
   Isolate* isolate = Isolate::GetCurrent();
-  HandleScope handle(isolate);
+  HandleScope scope(isolate);
 
   Worker* worker = (Worker*) work->data;
 
