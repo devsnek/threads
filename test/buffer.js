@@ -4,4 +4,4 @@ const t = new Thread(() => {
   return Buffer.from('hi');
 });
 
-t.join(console.log);
+t.join().then(console.log);

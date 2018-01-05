@@ -6,7 +6,7 @@ const t = new Thread((x, y, { on, send, id }) => {
   send(1);
   on('message', (d) => send(d));
   return { x, y, id };
-}, 5, 'meme');
+}, [5, 'meme']);
 
 t.join()
   .then((r) => console.log('JOIN', r))

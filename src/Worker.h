@@ -11,7 +11,8 @@ class Worker : public node::ObjectWrap {
  public:
   struct Source {
     const char* code;
-    const char* preload;
+    const char* references[128];
+    int references_length;
     std::pair<uint8_t*, size_t> arguments;
   };
 

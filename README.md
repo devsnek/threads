@@ -36,7 +36,7 @@ TODO:
 **Kind**: global class
 
 * [Thread](#Thread)
-    * [new Thread(fn, ...props)](#new_Thread_new)
+    * [new Thread(fn, props, references)](#new_Thread_new)
     * _instance_
         * [.send(value)](#Thread+send)
         * [.join()](#Thread+join) ⇒ <code>Promise.&lt;\*&gt;</code>
@@ -49,14 +49,15 @@ TODO:
 
 <a name="new_Thread_new"></a>
 
-### new Thread(fn, ...props)
+### new Thread(fn, props, references)
 Create a thread
 
 
 | Param | Type | Description |
 | --- | --- | --- |
 | fn | [<code>fnCallback</code>](#Thread..fnCallback) | Function that will run in a new thread |
-| ...props | <code>\*</code> | Values to pass to the thread callback |
+| props | <code>Array.&lt;\*&gt;</code> | Values to pass to the thread callback |
+| references | <code>Object</code> | References to functions |
 
 <a name="Thread+send"></a>
 
@@ -94,7 +95,7 @@ Lock the thread's context's mutex, analogous to std::mutex::try_lock
 ### thread.unlock()
 Unlock the thread context's mutex, analogous to std::mutex::unlock
 
-**Kind**: instance method of [<code>Thread</code>](#Thread)  
+**Kind**: instance method of [<code>Thread</code>](#Thread)
 <a name="Thread..Context"></a>
 
 ### Thread~Context : <code>Object</code>

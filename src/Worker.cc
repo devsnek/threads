@@ -4,6 +4,7 @@
 #include <uv.h>
 #include "Worker.h"
 #include "util.h"
+#include "NativeUtil.h"
 
 using namespace v8;
 
@@ -11,6 +12,16 @@ uv_thread_t main_thread;
 const uint64_t timeOrigin = uv_hrtime();
 
 Persistent<Function> Worker::constructor;
+
+const char* preload = "";
+
+void SetPreload(const FunctionCallbackInfo<Value>& info) {
+  Isolate* isolate = info.GetIsolate();
+  String::Utf8Value preload_utf8(isolate, info[0].As<String>());
+  preload = strdup(*preload_utf8);
+}
+
+void Noop(const FunctionCallbackInfo<Value>& info) {}
 
 void Worker::Init(Local<Object> exports) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -36,13 +47,13 @@ void Worker::Init(Local<Object> exports) {
   V("running", Worker::State::running);
   V("terminated", Worker::State::terminated);
 #undef V
+  exports->Set(String::NewFromUtf8(isolate, "constants"), constants);
+
+  exports->Set(String::NewFromUtf8(isolate, "setPreload"), FunctionTemplate::New(isolate, SetPreload)->GetFunction());
 
   Local<Function> fn = tpl->GetFunction();
-  fn->Set(String::NewFromUtf8(isolate, "constants"), constants);
   constructor.Reset(isolate, fn);
   exports->Set(String::NewFromUtf8(isolate, "Worker"), fn);
-
-  exports->Set(String::NewFromUtf8(isolate, "constants"), constants);
 }
 
 uint32_t WorkerId = 0;
@@ -81,11 +92,16 @@ void Worker::New(const FunctionCallbackInfo<Value>& info) {
     char* buffer = strdup(*code_utf8);
     source.code = buffer;
 
-    String::Utf8Value preload_utf8(isolate, info[2].As<String>());
-    buffer = strdup(*preload_utf8);
-    source.preload = buffer;
-
     source.arguments = serialize(isolate, info[1].As<Array>());
+
+    Local<Object> references = info[2].As<Object>();
+    Local<Array> refkeys = references->GetPropertyNames().As<Array>();
+    source.references_length = refkeys->Length() > 128 ? 128 : refkeys->Length();
+    for (int i = 0; i < source.references_length; i++) {
+      String::Utf8Value ref_utf8(isolate, refkeys->Get(i).As<String>());
+      char* copy = strdup(*ref_utf8);
+      source.references[i] = copy;
+    }
 
     Worker* worker = new Worker(local, source);
     worker->Wrap(info.This());
@@ -132,7 +148,7 @@ void Worker::WorkThread(uv_work_t* work) {
     global->SetAlignedPointerInInternalField(0, worker);
     USE(global->Set(context, String::NewFromUtf8(isolate, "global"), global));
 
-    USE(global->Set(context, String::NewFromUtf8(isolate, "console_"), FunctionTemplate::New(isolate, ThreadConsole)->GetFunction()));
+    USE(global->Set(context, String::NewFromUtf8(isolate, "_console"), FunctionTemplate::New(isolate, ThreadConsole)->GetFunction()));
 
     Local<Object> perf = Object::New(isolate);
 #define V(name, val) \
@@ -141,6 +157,8 @@ void Worker::WorkThread(uv_work_t* work) {
     V("timeOrigin", Number::New(isolate, timeOrigin / 1e6));
 #undef V
     USE(global->Set(context, String::NewFromUtf8(isolate, "performance"), perf));
+
+    USE(global->Set(context, String::NewFromUtf8(isolate, "_util"), MakeNativeUtil(isolate)));
 
     CHECK_ERR();
 
@@ -154,7 +172,7 @@ void Worker::WorkThread(uv_work_t* work) {
                         False(isolate),                         // is WASM
                         False(isolate));                        // is ES6 module
 
-    USE(Script::Compile(context, String::NewFromUtf8(isolate, source.preload)).ToLocalChecked()->Run(context));
+    USE(Script::Compile(context, String::NewFromUtf8(isolate, preload)).ToLocalChecked()->Run(context));
 
     Local<String> code = String::NewFromUtf8(isolate, source.code);
     MaybeLocal<Script> maybe_script = Script::Compile(context, code, &origin);
@@ -188,6 +206,14 @@ void Worker::WorkThread(uv_work_t* work) {
     V("unlock", Unlock);
 #undef V
     USE(coms->Set(context, String::NewFromUtf8(isolate, "id"), Integer::New(isolate, worker->id)));
+
+    Local<Object> references = Object::New(isolate);
+    for (int i = 0; i < source.references_length; i++)
+      references->Set(context, String::NewFromUtf8(isolate, source.references[i]), FunctionTemplate::New(isolate, Noop)->GetFunction());
+
+    USE(coms->Set(context, String::NewFromUtf8(isolate, "references"), references));
+
+
     args[props->Length()] = coms;
 
     Local<Function> fn = maybe_result.ToLocalChecked().As<Function>();

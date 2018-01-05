@@ -53,9 +53,30 @@
         ],
       ],
       'sources': [
-#        'src/Reference.cc',
+        'src/NativeUtil.cc',
         'src/Worker.cc',
         'src/threads.cc',
+      ],
+    },
+    {
+      'target_name': 'native-tests',
+      'cflags_cc': [ '-std=c++14' ],
+      'cflags_cc!': [ '-fno-exceptions', '-fno-rtti' ],
+      'xcode_settings': {
+        'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',
+        'GCC_ENABLE_CPP_RTTI': 'YES',
+        'CLANG_CXX_LANGUAGE_STANDARD': 'c++14',
+      },
+      'msvs_settings': {
+        'VCCLCompilerTool': {
+          'ExceptionHandling': '1',
+          'RuntimeTypeInfo': 'true',
+          'AdditionalOptions': [ '/GR' ],
+        },
+      },
+      'msvs_disabled_warnings': [ 4068 ], # Unknown pragma
+      'sources': [
+        'test/native.cc'
       ],
     },
   ],

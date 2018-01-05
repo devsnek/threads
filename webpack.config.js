@@ -8,4 +8,7 @@ module.exports = {
   plugins: [
     new UglifyJSPlugin(),
   ],
+  node: {
+    global: false,
+  },
 };
