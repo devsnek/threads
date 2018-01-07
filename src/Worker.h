@@ -20,7 +20,13 @@ class Worker : public node::ObjectWrap {
 
   Worker(v8::Local<v8::Promise::Resolver>, Worker::Source);
   ~Worker();
+
   static void Init(v8::Local<v8::Object>);
+
+  State state = State::created;
+  uint32_t id;
+
+ private:
   static void New(const v8::FunctionCallbackInfo<v8::Value>&);
 
   static void GetPromise(const v8::FunctionCallbackInfo<v8::Value>&);
@@ -36,19 +42,18 @@ class Worker : public node::ObjectWrap {
   static void ThreadConsole(const v8::FunctionCallbackInfo<v8::Value>&);
   static void ThreadHrtime(const v8::FunctionCallbackInfo<v8::Value>&);
 
+  static void WorkThread(void*);
+  static void WorkCallback(uv_async_t*);
+
   static Worker* GetWorker(const v8::FunctionCallbackInfo<v8::Value>&);
 
-  Worker::Source source;
-  v8::Persistent<v8::Promise::Resolver> persistent;
-  SerializedData result;
-  SerializedData error;
+  uv_async_t async_;
 
-  State state = State::created;
-  uint32_t id;
-
- private:
-  static void WorkThread(uv_work_t*);
-  static void WorkCallback(uv_work_t*, int);
+  Worker::Source source_;
+  v8::Persistent<v8::Promise::Resolver> persistent_;
+  v8::Persistent<v8::Function> tickCallback_;
+  SerializedData result_;
+  SerializedData error_;
 
   ThreadQueue<SerializedData> inQueue_;
   ThreadQueue<SerializedData> outQueue_;

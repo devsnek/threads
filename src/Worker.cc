@@ -8,8 +8,13 @@
 
 using namespace v8;
 
-uv_thread_t main_thread;
 const uint64_t timeOrigin = uv_hrtime();
+
+uv_thread_t main_thread;
+bool inThread() {
+  uv_thread_t this_thread = uv_thread_self();
+  return !uv_thread_equal(&main_thread, &this_thread);
+}
 
 Persistent<Function> Worker::constructor;
 
@@ -20,8 +25,6 @@ void SetPreload(const FunctionCallbackInfo<Value>& info) {
   String::Utf8Value preload_utf8(isolate, info[0].As<String>());
   preload = strdup(*preload_utf8);
 }
-
-void Noop(const FunctionCallbackInfo<Value>& info) {}
 
 void Worker::Init(Local<Object> exports) {
   Isolate* isolate = Isolate::GetCurrent();
@@ -61,18 +64,19 @@ uint32_t WorkerId = 0;
 Worker::Worker(Local<Promise::Resolver> resolver, Worker::Source source) {
   Isolate* isolate = Isolate::GetCurrent();
 
-  this->source = source;
-  this->persistent.Reset(isolate, resolver);
+  this->source_ = source;
+  this->persistent_.Reset(isolate, resolver);
   this->id = WorkerId++;
 
-  uv_work_t *work = new uv_work_t;
-  work->data = this;
+  this->async_.data = this;
+  uv_async_init(uv_default_loop(), &this->async_, Worker::WorkCallback);
 
-  uv_queue_work(uv_default_loop(), work, Worker::WorkThread, Worker::WorkCallback);
+  uv_thread_t* thread = new uv_thread_t;
+  uv_thread_create(thread, Worker::WorkThread, this);
 }
 
 Worker::~Worker() {
-  this->persistent.Reset();
+  this->persistent_.Reset();
 }
 
 void Worker::New(const FunctionCallbackInfo<Value>& info) {
@@ -115,12 +119,12 @@ void Worker::New(const FunctionCallbackInfo<Value>& info) {
   }
 }
 
-void Worker::WorkThread(uv_work_t* work) {
-  Worker* worker = (Worker*) work->data;
+void Worker::WorkThread(void *arg) {
+  Worker* worker = (Worker*) arg; // work->data;
 
   worker->state = Worker::State::running;
 
-  Worker::Source source = worker->source;
+  Worker::Source source = worker->source_;
 
   Isolate::CreateParams create_params;
   create_params.array_buffer_allocator =
@@ -139,8 +143,9 @@ void Worker::WorkThread(uv_work_t* work) {
     TryCatch try_catch(isolate);
 #define CHECK_ERR() \
     if (try_catch.HasCaught()) {                                        \
-      worker->error = serialize(isolate, try_catch.Message()->Get());   \
+      worker->error_ = serialize(isolate, try_catch.Message()->Get());  \
       worker->state = Worker::State::terminated;                        \
+      uv_async_send(&worker->async_);                                   \
       return;                                                           \
     }
 
@@ -153,6 +158,7 @@ void Worker::WorkThread(uv_work_t* work) {
     Local<Object> perf = Object::New(isolate);
 #define V(name, val) \
     USE(perf->Set(context, String::NewFromUtf8(isolate, name), val))
+
     V("_hrtime",FunctionTemplate::New(isolate, ThreadHrtime)->GetFunction());
     V("timeOrigin", Number::New(isolate, timeOrigin / 1e6));
 #undef V
@@ -207,12 +213,13 @@ void Worker::WorkThread(uv_work_t* work) {
 #undef V
     USE(coms->Set(context, String::NewFromUtf8(isolate, "id"), Integer::New(isolate, worker->id)));
 
+    /*
     Local<Object> references = Object::New(isolate);
     for (int i = 0; i < source.references_length; i++)
-      references->Set(context, String::NewFromUtf8(isolate, source.references[i]), FunctionTemplate::New(isolate, Noop)->GetFunction());
+      USE(references->Set(context, String::NewFromUtf8(isolate, source.references[i]), FunctionTemplate::New(isolate, Noop)->GetFunction()));
 
     USE(coms->Set(context, String::NewFromUtf8(isolate, "references"), references));
-
+    */
 
     args[props->Length()] = coms;
 
@@ -227,8 +234,13 @@ void Worker::WorkThread(uv_work_t* work) {
     MaybeLocal<Value> maybe_onmessage =
       global->GetPrivate(context, Private::ForApi(isolate, String::NewFromUtf8(isolate, "WorkerOnMessage")));
 
+    CHECK_ERR();
+
     if (!maybe_onmessage.IsEmpty()) {
       Local<Value> onmessage_ = maybe_onmessage.ToLocalChecked();
+
+      CHECK_ERR();
+
       if (onmessage_->IsFunction()) {
         Local<Function> onmessage = onmessage_.As<Function>();
         while (true) {
@@ -243,46 +255,46 @@ void Worker::WorkThread(uv_work_t* work) {
           Local<Value> value = deserialize(isolate, data);
           Local<Value> argv[1] = {value};
           USE(onmessage->Call(context, global, 1, argv));
+          isolate->RunMicrotasks();
         }
       }
     }
+    worker->result_ = serialize(isolate, maybe_result.ToLocalChecked());
+  }
 
 #undef CHECK_ERR
-
-    worker->result = serialize(isolate, maybe_result.ToLocalChecked());
-  }
 
   worker->state = Worker::State::terminated;
 
   isolate->Dispose();
+
+  uv_async_send(&worker->async_);
 }
 
-void Worker::WorkCallback(uv_work_t *work, int status) {
+void Worker::WorkCallback(uv_async_t* async) {
   Isolate* isolate = Isolate::GetCurrent();
   HandleScope scope(isolate);
 
-  Worker* worker = (Worker*) work->data;
+  Worker* worker = (Worker*) async->data;
 
   TryCatch try_catch(isolate);
 
-  Local<Promise::Resolver> local = Local<Promise::Resolver>::New(isolate, worker->persistent);
+  Local<Promise::Resolver> local = Local<Promise::Resolver>::New(isolate, worker->persistent_);
 
-  if (worker->error.first != nullptr) {
-    Local<String> message = deserialize(isolate, worker->error).As<String>();
+  if (worker->error_.first != nullptr) {
+    Local<String> message = deserialize(isolate, worker->error_).As<String>();
     local->Reject(Exception::Error(message));
   } else {
-    Local<Value> value = deserialize(isolate, worker->result);
+    Local<Value> value = deserialize(isolate, worker->result_);
     local->Resolve(value);
- }
-
-  if (try_catch.HasCaught()) {
-    local->Reject(try_catch.Exception());
   }
-}
 
-bool inThread() {
-  uv_thread_t this_thread = uv_thread_self();
-  return !uv_thread_equal(&main_thread, &this_thread);
+  if (try_catch.HasCaught())
+    local->Reject(try_catch.Exception());
+
+  isolate->RunMicrotasks();
+
+  uv_close((uv_handle_t*) async, NULL);
 }
 
 Worker* Worker::GetWorker(const FunctionCallbackInfo<Value>& info) {
@@ -302,7 +314,7 @@ void Worker::GetPromise(const FunctionCallbackInfo<Value>& info) {
 
   Worker* worker = GetWorker(info);
 
-  Local<Promise::Resolver> local = Local<Promise::Resolver>::New(isolate, worker->persistent);
+  Local<Promise::Resolver> local = Local<Promise::Resolver>::New(isolate, worker->persistent_);
 
   info.GetReturnValue().Set(local->GetPromise());
 }
@@ -340,8 +352,7 @@ void Worker::Send(const FunctionCallbackInfo<Value>& info) {
   info.GetReturnValue().Set(Undefined(isolate));
 }
 
-// called once per tick using `process.nextTick`, a better method is definitely needed
-// for receiving messages
+// called using `process.nextTick`
 void Worker::CheckOutgoingMessages(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
@@ -353,19 +364,17 @@ void Worker::CheckOutgoingMessages(const FunctionCallbackInfo<Value>& info) {
 
   Local<Context> context = isolate->GetCurrentContext();
  
-  Local<Array> out = Array::New(isolate, 2);
-  info.GetReturnValue().Set(out);
+  Local<Array> out = info[0].As<Array>();
 
-  if (worker->outQueue_.empty()) {
-    USE(out->Set(context, 0, False(isolate)));
-  } else {
-    SerializedData data = worker->outQueue_.pop();
+  if (worker->outQueue_.empty())
+    return;
 
-    Local<Value> value = deserialize(isolate, data);
+  SerializedData data = worker->outQueue_.pop();
 
-    USE(out->Set(context, 0, True(isolate)));
-    USE(out->Set(context, 1, value));
-  }
+  Local<Value> value = deserialize(isolate, data);
+
+  USE(out->Set(context, 0, True(isolate)));
+  USE(out->Set(context, 1, value));
 }
 
 void Worker::Terminate(const FunctionCallbackInfo<Value>& info) {

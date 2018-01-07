@@ -18,7 +18,7 @@ function estimatePI(points) {
 async function run(points, workers) {
   const start = Date.now();
 
-  const promises = Array.from({ length: workers }, () => new Thread(estimatePI, points / workers).join());
+  const promises = Array.from({ length: workers }, () => new Thread(estimatePI, [points / workers]).join());
   const values = await Promise.all(promises);
 
   let aggregate = 0;
