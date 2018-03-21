@@ -143,7 +143,7 @@ void Worker::WorkThread(void *arg) {
     TryCatch try_catch(isolate);
 #define CHECK_ERR() \
     if (try_catch.HasCaught()) {                                        \
-      worker->error_ = serialize(isolate, try_catch.Message()->Get());  \
+      worker->error_ = serialize(isolate, try_catch.StackTrace());      \
       worker->state = Worker::State::terminated;                        \
       uv_async_send(&worker->async_);                                   \
       return;                                                           \
@@ -244,6 +244,8 @@ void Worker::WorkThread(void *arg) {
       if (onmessage_->IsFunction()) {
         Local<Function> onmessage = onmessage_.As<Function>();
         while (true) {
+          isolate->RunMicrotasks();
+
           if (worker->state != Worker::State::running)
             break;
 
@@ -255,7 +257,6 @@ void Worker::WorkThread(void *arg) {
           Local<Value> value = deserialize(isolate, data);
           Local<Value> argv[1] = {value};
           USE(onmessage->Call(context, global, 1, argv));
-          isolate->RunMicrotasks();
         }
       }
     }
@@ -282,8 +283,8 @@ void Worker::WorkCallback(uv_async_t* async) {
   Local<Promise::Resolver> local = Local<Promise::Resolver>::New(isolate, worker->persistent_);
 
   if (worker->error_.first != nullptr) {
-    Local<String> message = deserialize(isolate, worker->error_).As<String>();
-    local->Reject(Exception::Error(message));
+    Local<Value> stack = deserialize(isolate, worker->error_);
+    local->Reject(stack);
   } else {
     Local<Value> value = deserialize(isolate, worker->result_);
     local->Resolve(value);
