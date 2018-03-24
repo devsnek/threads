@@ -8,7 +8,7 @@
 
 using namespace v8;
 
-const uint64_t timeOrigin = uv_hrtime();
+uint64_t timeOrigin = 0;
 
 uv_thread_t main_thread;
 bool inThread() {
@@ -125,6 +125,9 @@ void Worker::WorkThread(void *arg) {
   worker->state = Worker::State::running;
 
   Worker::Source source = worker->source_;
+
+
+  timeOrigin = uv_hrtime();
 
   Isolate::CreateParams create_params;
   create_params.array_buffer_allocator =
@@ -427,14 +430,13 @@ void Worker::ThreadConsole(const FunctionCallbackInfo<Value>& info) {
   Isolate* isolate = info.GetIsolate();
   HandleScope scope(isolate);
 
+  Worker* worker = GetWorker(info);
+
   String::Utf8Value method(isolate, info[0]);
   String::Utf8Value utf8(isolate, info[1]);
 
-  Worker* worker = GetWorker(info);
-
-  const char* fmt = "[Worker %02d] %s\n";
   FILE* out = strcmp(*method, "error") == 0 ? stderr : stdout;
-  fprintf(out, fmt, worker->id, *utf8);
+  fprintf(out, "[Worker %02d] %s\n", worker->id, *utf8);
 
   info.GetReturnValue().Set(Undefined(isolate));
 }

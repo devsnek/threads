@@ -45,7 +45,7 @@ class Worker : public node::ObjectWrap {
   static void WorkThread(void*);
   static void WorkCallback(uv_async_t*);
 
-  static Worker* GetWorker(const v8::FunctionCallbackInfo<v8::Value>&);
+  inline static Worker* GetWorker(const v8::FunctionCallbackInfo<v8::Value>&);
 
   uv_async_t async_;
 

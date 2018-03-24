@@ -1,10 +1,13 @@
+'use strict';
+
 const Thread = require('..');
 
 const t = new Thread(({ lock }) => {
-  return lock();
+  const success = lock();
+  return success;
 });
 
-t.join((r) => console.log('JOIN', r));
+t.join().then((r) => console.log('JOIN', r));
 
 console.log('1', t.lock());
 console.log('2', t.lock());

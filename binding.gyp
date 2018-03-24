@@ -49,7 +49,6 @@
       'conditions': [
         [ 'OS == "win"',
           { 'defines': [ 'NOMINMAX' ] },
-          { 'sources': [ 'src/array_buffer_shim.cc' ] },
         ],
       ],
       'sources': [
