@@ -123,7 +123,7 @@ Unlock the thread context's mutex, analogous to std::mutex::unlock
 [npm]: https://npmjs.org/package/@snek/threads
 [large-badge]: https://nodei.co/npm/@snek/threads.png?downloads=true&downloadRank=true&stars=true
 [stats-link]: https://nodei.co/npm/@snek/threads/
-[version-badge]: http://versionbadg.es/devsnek/threads.svg
+[version-badge]: https://versionbadge.now.sh/npm/@snek/threads.svg
 [download-badge]: https://img.shields.io/npm/dt/@snek/threads.svg?maxAge=3600
 [dep-badge]: https://david-dm.org/devsnek/threads.svg
 [dep-link]: https://david-dm.org/devsnek/threads
